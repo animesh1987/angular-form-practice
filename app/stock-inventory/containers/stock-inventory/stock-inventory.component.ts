@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { FormBuilder, FormGroup, FormArray } from '@angular/forms';
+import { FormBuilder, FormGroup, FormArray, Validators, AbstractControl } from '@angular/forms';
 
 import {Observable} from "rxjs/Observable";
 import 'rxjs/add/observable/forkJoin';
@@ -7,6 +7,8 @@ import 'rxjs/add/observable/forkJoin';
 import { Item, Product} from '../../models/product.interface';
 
 import { StockInventoryService } from '../../services/stock-inventory.service';
+
+import { StockValidators } from './stock-inventory.validators';
 
 @Component({
   selector: 'stock-inventory',
@@ -30,6 +32,10 @@ import { StockInventoryService } from '../../services/stock-inventory.service';
           [map]="productMap">
         </stock-products>
 
+        <div class="stock-inventory__price">
+          Total: {{ total | currency:'USD':true}}
+        </div>
+
         <div class="stock-inventory__buttons">
           <button type="submit"
             [disabled]="form.invalid">
@@ -49,14 +55,17 @@ export class StockInventoryComponent implements OnInit{
 
   productMap: Map<number, Product>;
 
+  total: number;
+
   form = this.fb.group({
     store: this.fb.group({
-      branch: '',
-      code: ''
+      branch: ['', [Validators.required, StockValidators.checkBranch],
+        [this.validateBranch.bind(this)]],
+      code: ['', Validators.required]
     }),
     selector: this.createStock({}),
     stock: this.fb.array([])
-  });
+  }, { validator: StockValidators.checkStockExists});
 
   constructor(
       private fb: FormBuilder,
@@ -74,7 +83,27 @@ export class StockInventoryComponent implements OnInit{
         this.productMap = new Map<number, Product>(myMap);
         this.products = products;
         cart.forEach(item => this.addStock(item));
+
+        this.calculateTotal(this.form.get('stock').value);
+
+        this.form.get('stock')
+            .valueChanges.subscribe(value => {
+          this.calculateTotal(value);
+        });
       });
+  }
+
+  validateBranch(control: AbstractControl) {
+    return this.stockService
+        .checkBranchId(control.value)
+        .map((response: boolean) => response ? null : {unknownBranch: true});
+  }
+
+  calculateTotal(value: Item[]) {
+    const total = value.reduce((prev, next) => {
+      return prev + (next.quantity * this.productMap.get(next.product_id).price);
+    }, 0);
+    this.total = total;
   }
 
   createStock(stock) {
